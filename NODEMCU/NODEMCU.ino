@@ -19,7 +19,7 @@ int smokeSensorValue, flameSensorValue;
 
 SoftwareSerial espSerial(D6, D5);
 
-const char* serverName = "http://192.168.1.106:1880/update-sensor";
+const char* serverName = "http://192.168.1.17:3000/";
 
 void setup() {
   Serial.begin(115200);
@@ -44,7 +44,6 @@ void setup() {
 
 
 void loop() {
-
   StaticJsonBuffer<200> jsonBuffer;
 
   JsonObject& doc = jsonBuffer.parseObject(espSerial);
@@ -61,9 +60,25 @@ void loop() {
   latitude = doc["latitude"];
   longitude = doc["longitude"];
 
-
-  //  jsonBuffer.clear();
   sendToFirebase();
+
+  int hotTemperature = 40.5;
+  int smokeSensorThreshold = 400;
+
+  boolean isSmokeExist = smokeSensorValue > smokeSensorThreshold;
+  boolean isFlameExist = flameSensorValue == HIGH;
+
+  boolean isFireExist = isFlameExist && isSmokeExist && temperature > hotTemperature;
+  boolean isSmokeOrFlameExist = isSmokeExist || isFlameExist;
+
+
+  if (isFireExist) {
+    sendPushNotification("Kebakaran");
+    delay(5000);
+  } else if (isSmokeOrFlameExist) {
+    sendPushNotification("Peringatan");
+    delay(5000);
+  }
 
 }
 
@@ -86,17 +101,22 @@ void sendToFirebase() {
   Firebase.setFloat ("smoke", smokeSensorValue);
   Firebase.setFloat ("latitude", latitude);
   Firebase.setFloat ("longitude", longitude);
-
 }
 
-void sendPushNotification() {
+void sendPushNotification(String fireStatus) {
   if (WiFi.status() == WL_CONNECTED) {
     WiFiClient client;
     HTTPClient http;
-
+    String httpRequestData = "";
     http.begin(client, serverName);
+    http.addHeader("Content-Type", "application/json");
+    if (fireStatus == "Kebakaran") {
+      httpRequestData = "{\"to\":\"ExponentPushToken[eX94TXN37U4r4Ms9rn8NPV]\",\"title\":\"Berbahaya\",\"body\":\"Terjadi Kebakaran\"}";
+    } else if (fireStatus == "Peringatan") {
+      httpRequestData = "{\"to\":\"ExponentPushToken[eX94TXN37U4r4Ms9rn8NPV]\",\"title\":\"Peringatan\",\"body\":\"Peringatan\"}";
+    }
 
-    int httpResponseCode = http.POST();
+    int httpResponseCode = http.POST(httpRequestData);
 
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
@@ -106,7 +126,5 @@ void sendPushNotification() {
   } else {
     Serial.println("WiFi Disconnected");
   }
-
-
 
 }
